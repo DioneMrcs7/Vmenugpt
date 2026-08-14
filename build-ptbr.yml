@@ -1,0 +1,56 @@
+name: Compilar vMenu PT-BR
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Baixar arquivos do repositorio
+        uses: actions/checkout@v4
+
+      - name: Extrair source original
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path work | Out-Null
+          Expand-Archive -Path "vMenu-3.8.56.zip" -DestinationPath work -Force
+          $root = Get-ChildItem work -Directory | Select-Object -First 1
+          if (-not $root) { throw "Pasta do source nao encontrada." }
+          Move-Item $root.FullName source
+
+      - name: Aplicar traducao PT-BR
+        shell: pwsh
+        run: |
+          Expand-Archive -Path "vMenu-3.8.56_PTBR_SOURCE_ALTERADO.zip" -DestinationPath overlay -Force
+          Copy-Item "overlay\*" "source\" -Recurse -Force
+
+      - name: Restaurar dependencias
+        working-directory: source
+        run: dotnet restore vMenu.sln
+
+      - name: Compilar Release
+        working-directory: source
+        run: dotnet build vMenu.sln -c Release --no-restore
+
+      - name: Montar resource FiveM
+        shell: pwsh
+        run: |
+          Copy-Item "source\assets\fxmanifest.lua" "source\build\vMenu\fxmanifest.lua" -Force
+          (Get-Content "source\build\vMenu\fxmanifest.lua") -replace 'versiongoeshere','3.8.56-PTBR' |
+            Set-Content -Encoding ASCII "source\build\vMenu\fxmanifest.lua"
+          if (-not (Test-Path "source\build\vMenu\vMenuClient.net.dll")) { throw "vMenuClient.net.dll nao foi gerada." }
+          if (-not (Test-Path "source\build\vMenu\vMenuServer.net.dll")) { throw "vMenuServer.net.dll nao foi gerada." }
+
+      - name: Criar ZIP pronto
+        shell: pwsh
+        run: Compress-Archive -Path "source\build\vMenu\*" -DestinationPath "vMenu-3.8.56-PTBR-PRONTO.zip" -Force
+
+      - name: Publicar ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: vMenu-PTBR-PRONTO
+          path: vMenu-3.8.56-PTBR-PRONTO.zip
+          retention-days: 30
